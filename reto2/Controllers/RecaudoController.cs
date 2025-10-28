@@ -147,7 +147,6 @@ namespace reto2.Controllers
 
         /// <summary>
         /// Obtiene reporte mensual agrupado por estación y fecha
-        /// La lógica se ejecuta del lado del servidor (SQL Server) según requisito del punto 5
         /// </summary>
         /// <param name="año">Año del reporte</param>
         /// <param name="mes">Mes del reporte (1-12)</param>
