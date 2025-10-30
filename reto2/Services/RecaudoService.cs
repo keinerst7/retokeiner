@@ -20,27 +20,203 @@ namespace reto2.Services
             _logger = logger;
         }
 
-        public List<Recaudo> GetRecaudoPorRango(DateTime fechaInicio,DateTime fechaFin)
+        #region Consultas con Paginación
+
+        /// <summary>
+        /// Obtiene recaudos con paginación
+        /// </summary>
+        public async Task<(List<Recaudo> Datos, int TotalRegistros)> GetRecaudosPaginadosAsync(
+            int pagina = 1,
+            int registrosPorPagina = 50)
         {
-            var recaudos =  _context.Recaudos
-            .Where(r => r.Hora.Date >= fechaInicio.Date && r.Hora.Date <= fechaFin.Date)
-            .OrderBy(r => r.Hora)
-            .ToList();
-            return recaudos;
+            var query = _context.Recaudos.OrderByDescending(r => r.Hora);
+
+            var totalRegistros = await query.CountAsync();
+
+            var datos = await query
+                .Skip((pagina - 1) * registrosPorPagina)
+                .Take(registrosPorPagina)
+                .ToListAsync();
+
+            return (datos, totalRegistros);
         }
 
         /// <summary>
+        /// Obtiene todos los recaudos 
+        /// </summary>
+        public async Task<List<Recaudo>> GetTodosRecaudosAsync()
+        {
+            return await _context.Recaudos
+                .OrderByDescending(r => r.Hora)
+                .ToListAsync();
+        }
+
+        /// <summary>
+        /// Obtiene recaudos filtrados por estación con paginación
+        /// </summary>
+        public async Task<(List<Recaudo> Datos, int TotalRegistros)> GetRecaudosPorEstacionAsync(
+            string estacion,
+            int pagina = 1,
+            int registrosPorPagina = 50)
+        {
+            var query = _context.Recaudos
+                .Where(r => r.Estacion.Contains(estacion))
+                .OrderByDescending(r => r.Hora);
+
+            var totalRegistros = await query.CountAsync();
+
+            var datos = await query
+                .Skip((pagina - 1) * registrosPorPagina)
+                .Take(registrosPorPagina)
+                .ToListAsync();
+
+            return (datos, totalRegistros);
+        }
+
+        /// <summary>
+        /// Obtiene recaudos filtrados por fecha
+        /// </summary>
+        public async Task<List<Recaudo>> GetRecaudosPorFechaAsync(DateTime fecha)
+        {
+            return await _context.Recaudos
+                .Where(r => r.Hora.Date == fecha.Date)
+                .OrderByDescending(r => r.Hora)
+                .ToListAsync();
+        }
+
+        /// <summary>
+        /// Obtiene recaudos por rango de fechas con paginación
+        /// </summary>
+        public async Task<(List<Recaudo> Datos, int TotalRegistros)> GetRecaudosPorRangoAsync(
+            DateTime fechaInicio,
+            DateTime fechaFin,
+            int pagina = 1,
+            int registrosPorPagina = 50)
+        {
+            var query = _context.Recaudos
+                .Where(r => r.Hora.Date >= fechaInicio.Date && r.Hora.Date <= fechaFin.Date)
+                .OrderBy(r => r.Hora);
+
+            var totalRegistros = await query.CountAsync();
+
+            var datos = await query
+                .Skip((pagina - 1) * registrosPorPagina)
+                .Take(registrosPorPagina)
+                .ToListAsync();
+
+            return (datos, totalRegistros);
+        }
+
+        #endregion
+
+        #region Reportes
+
+        /// <summary>
+        /// Obtiene reporte mensual agrupado por estación y fecha
+        /// </summary>
+        public async Task<object> GetReporteMensualAsync(int año, int mes)
+        {
+            if (mes < 1 || mes > 12)
+            {
+                throw new ArgumentException("El mes debe estar entre 1 y 12");
+            }
+
+            var primerDia = new DateTime(año, mes, 1);
+            var ultimoDia = primerDia.AddMonths(1).AddDays(-1);
+
+            var reporte = await _context.Recaudos
+                .Where(r => r.Hora >= primerDia && r.Hora <= ultimoDia)
+                .GroupBy(r => new
+                {
+                    r.Estacion,
+                    Fecha = r.Hora.Date
+                })
+                .Select(g => new
+                {
+                    Estacion = g.Key.Estacion,
+                    Fecha = g.Key.Fecha,
+                    TotalVehiculos = g.Count(),
+                    TotalRecaudado = g.Sum(r => r.ValorTabulado),
+                    Categorias = g.GroupBy(r => r.Categoria)
+                        .Select(c => new
+                        {
+                            Categoria = c.Key,
+                            Cantidad = c.Count(),
+                            Total = c.Sum(r => r.ValorTabulado)
+                        })
+                        .ToList()
+                })
+                .OrderBy(r => r.Estacion)
+                .ThenBy(r => r.Fecha)
+                .ToListAsync();
+
+            return new
+            {
+                Periodo = $"{año}-{mes:D2}",
+                TotalEstaciones = reporte.Select(r => r.Estacion).Distinct().Count(),
+                TotalDias = reporte.Select(r => r.Fecha).Distinct().Count(),
+                TotalVehiculos = reporte.Sum(r => r.TotalVehiculos),
+                TotalRecaudado = reporte.Sum(r => r.TotalRecaudado),
+                Detalle = reporte
+            };
+        }
+
+        /// <summary>
+        /// Obtiene reporte agrupado solo por estación
+        /// </summary>
+        public async Task<object> GetReportePorEstacionAsync(int año, int mes)
+        {
+            if (mes < 1 || mes > 12)
+            {
+                throw new ArgumentException("El mes debe estar entre 1 y 12");
+            }
+
+            var primerDia = new DateTime(año, mes, 1);
+            var ultimoDia = primerDia.AddMonths(1).AddDays(-1);
+
+            var reporte = await _context.Recaudos
+                .Where(r => r.Hora >= primerDia && r.Hora <= ultimoDia)
+                .GroupBy(r => r.Estacion)
+                .Select(g => new
+                {
+                    Estacion = g.Key,
+                    TotalVehiculos = g.Count(),
+                    TotalRecaudado = g.Sum(r => r.ValorTabulado),
+                    PromedioRecaudoDiario = g.Sum(r => r.ValorTabulado) / g.Select(r => r.Hora.Date).Distinct().Count(),
+                    CategoriasPorEstacion = g.GroupBy(r => r.Categoria)
+                        .Select(c => new
+                        {
+                            Categoria = c.Key,
+                            Cantidad = c.Count(),
+                            Total = c.Sum(r => r.ValorTabulado)
+                        })
+                        .ToList()
+                })
+                .OrderByDescending(r => r.TotalRecaudado)
+                .ToListAsync();
+
+            return new
+            {
+                Periodo = $"{año}-{mes:D2}",
+                TotalEstaciones = reporte.Count,
+                Reporte = reporte
+            };
+        }
+
+        #endregion
+
+        #region Importación desde API Externa
+
+        /// <summary>
         /// Importa recaudos desde una fecha específica hasta hace 2 días
-        /// Evita duplicados verificando si ya existen datos para cada fecha
         /// </summary>
         public async Task<int> ImportarRecaudosDesdeAsync(DateTime fechaInicio)
         {
             int totalGuardados = 0;
             DateTime fechaActual = fechaInicio;
-            DateTime fechaLimite = DateTime.Now.AddDays(-2); // Solo hasta hace 2 días según la API
+            DateTime fechaLimite = DateTime.Now.AddDays(-2);
 
             _logger.LogInformation($"Iniciando importación desde {fechaInicio:yyyy-MM-dd} hasta {fechaLimite:yyyy-MM-dd}");
-            Console.WriteLine($"Iniciando importación desde {fechaInicio:yyyy-MM-dd} hasta {fechaLimite:yyyy-MM-dd}");
 
             while (fechaActual <= fechaLimite)
             {
@@ -48,34 +224,29 @@ namespace reto2.Services
 
                 try
                 {
-                    // Verificar si ya existen datos para esta fecha (evitar duplicados)
                     var existenDatos = await _context.Recaudos
                         .AnyAsync(r => r.Hora.Date == fechaActual.Date);
 
                     if (existenDatos)
                     {
                         _logger.LogInformation($"⊘ Fecha {fechaStr}: Ya existen datos, saltando...");
-                        Console.WriteLine($"⊘ Fecha {fechaStr}: Ya existen datos, saltando...");
                         fechaActual = fechaActual.AddDays(1);
                         continue;
                     }
 
-                    // Obtener datos de la API externa
                     var recaudos = await _apiService.GetRecaudosPorFechaAsync(fechaStr);
 
                     if (recaudos != null && recaudos.Any())
                     {
-                        // Convertir y agregar a la base de datos
                         foreach (var recaudoApi in recaudos)
                         {
-                            // Construir el DateTime completo: fecha + hora del día
                             var fechaHoraCompleta = fechaActual.Date.AddHours(recaudoApi.Hora);
 
                             var recaudo = new Recaudo
                             {
                                 Estacion = recaudoApi.Estacion,
                                 Sentido = recaudoApi.Sentido,
-                                Hora = fechaHoraCompleta, // Fecha completa con la hora
+                                Hora = fechaHoraCompleta,
                                 Categoria = recaudoApi.Categoria,
                                 ValorTabulado = recaudoApi.ValorTabulado,
                                 FechaRegistro = DateTime.Now
@@ -85,32 +256,20 @@ namespace reto2.Services
                         }
 
                         await _context.SaveChangesAsync();
-
                         totalGuardados += recaudos.Count;
                         _logger.LogInformation($"✓ Fecha {fechaStr}: {recaudos.Count} registros guardados");
-                        Console.WriteLine($"✓ Fecha {fechaStr}: {recaudos.Count} registros guardados");
-                    }
-                    else
-                    {
-                        _logger.LogInformation($"○ Fecha {fechaStr}: Sin datos disponibles");
-                        Console.WriteLine($"○ Fecha {fechaStr}: Sin datos disponibles");
                     }
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError($"✗ Error en fecha {fechaStr}: {ex.Message}");
-                    Console.WriteLine($"✗ Error en fecha {fechaStr}: {ex.Message}");
                 }
 
                 fechaActual = fechaActual.AddDays(1);
-
-                // Pequeña pausa para no saturar la API
                 await Task.Delay(500);
             }
 
             _logger.LogInformation($"Importación finalizada. Total: {totalGuardados} registros");
-            Console.WriteLine($"Importación finalizada. Total: {totalGuardados} registros");
-
             return totalGuardados;
         }
 
@@ -119,67 +278,50 @@ namespace reto2.Services
         /// </summary>
         public async Task<int> ImportarFechaEspecificaAsync(string fecha)
         {
-            try
+            if (!DateTime.TryParse(fecha, out DateTime fechaConsulta))
             {
-                // Validar formato de fecha
-                if (!DateTime.TryParse(fecha, out DateTime fechaConsulta))
-                {
-                    throw new ArgumentException($"Formato de fecha inválido: {fecha}");
-                }
-
-                // Verificar si ya existen datos para esta fecha
-                var existenDatos = await _context.Recaudos
-                    .AnyAsync(r => r.Hora.Date == fechaConsulta.Date);
-
-                if (existenDatos)
-                {
-                    _logger.LogWarning($"Ya existen datos para la fecha {fecha}");
-                    Console.WriteLine($"⚠ Ya existen datos para la fecha {fecha}");
-                    return 0;
-                }
-
-                // Obtener datos de la API
-                var recaudos = await _apiService.GetRecaudosPorFechaAsync(fecha);
-
-                if (recaudos == null || !recaudos.Any())
-                {
-                    _logger.LogInformation($"No hay datos disponibles para la fecha {fecha}");
-                    Console.WriteLine($"○ No hay datos disponibles para la fecha {fecha}");
-                    return 0;
-                }
-
-                // Guardar en la base de datos
-                foreach (var recaudoApi in recaudos)
-                {
-                    // Construir el DateTime completo: fecha + hora del día
-                    var fechaHoraCompleta = fechaConsulta.Date.AddHours(recaudoApi.Hora);
-
-                    var recaudo = new Recaudo
-                    {
-                        Estacion = recaudoApi.Estacion,
-                        Sentido = recaudoApi.Sentido,
-                        Hora = fechaHoraCompleta,
-                        Categoria = recaudoApi.Categoria,
-                        ValorTabulado = recaudoApi.ValorTabulado,
-                        FechaRegistro = DateTime.Now
-                    };
-
-                    _context.Recaudos.Add(recaudo);
-                }
-
-                await _context.SaveChangesAsync();
-
-                _logger.LogInformation($"✓ Fecha {fecha}: {recaudos.Count} registros guardados");
-                Console.WriteLine($"✓ Fecha {fecha}: {recaudos.Count} registros guardados");
-
-                return recaudos.Count;
+                throw new ArgumentException($"Formato de fecha inválido: {fecha}");
             }
-            catch (Exception ex)
+
+            var existenDatos = await _context.Recaudos
+                .AnyAsync(r => r.Hora.Date == fechaConsulta.Date);
+
+            if (existenDatos)
             {
-                _logger.LogError($"Error importando fecha {fecha}: {ex.Message}");
-                Console.WriteLine($"✗ Error importando fecha {fecha}: {ex.Message}");
-                throw;
+                _logger.LogWarning($"Ya existen datos para la fecha {fecha}");
+                return 0;
             }
+
+            var recaudos = await _apiService.GetRecaudosPorFechaAsync(fecha);
+
+            if (recaudos == null || !recaudos.Any())
+            {
+                _logger.LogInformation($"No hay datos disponibles para la fecha {fecha}");
+                return 0;
+            }
+
+            foreach (var recaudoApi in recaudos)
+            {
+                var fechaHoraCompleta = fechaConsulta.Date.AddHours(recaudoApi.Hora);
+
+                var recaudo = new Recaudo
+                {
+                    Estacion = recaudoApi.Estacion,
+                    Sentido = recaudoApi.Sentido,
+                    Hora = fechaHoraCompleta,
+                    Categoria = recaudoApi.Categoria,
+                    ValorTabulado = recaudoApi.ValorTabulado,
+                    FechaRegistro = DateTime.Now
+                };
+
+                _context.Recaudos.Add(recaudo);
+            }
+
+            await _context.SaveChangesAsync();
+            _logger.LogInformation($"✓ Fecha {fecha}: {recaudos.Count} registros guardados");
+            return recaudos.Count;
         }
+
+        #endregion
     }
 }
