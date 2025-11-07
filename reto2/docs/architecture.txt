@@ -1,0 +1,92 @@
+﻿@startuml
+!define RECTANGLE class
+
+skinparam backgroundColor #FEFEFE
+skinparam componentStyle rectangle
+
+title Sistema de Recaudos de Vehículos - Arquitectura de 3 Capas
+
+package "CAPA DE PRESENTACIÓN" #E3F2FD {
+    component "Angular Frontend" as Angular {
+        [RecaudosGridComponent]
+        [ReporteMensualComponent]
+        [RecaudoService]
+    }
+    
+    component "ASP.NET Core API" as API {
+        [RecaudosController]
+    }
+}
+
+package "CAPA DE LÓGICA DE NEGOCIO" #E8F5E9 {
+    component "Services" as Services {
+        [RecaudoService]
+        [ExternalApiService]
+    }
+    
+    note right of Services
+        **Patrones:**
+        - Service Layer
+        - Dependency Injection
+        - DTO Pattern
+    end note
+}
+
+package "CAPA DE DATOS" #FFF3E0 {
+    component "Data Access" as DataAccess {
+        [ApplicationDbContext]
+        [Recaudo Model]
+    }
+    
+    database "SQL Server" as DB {
+        [reto_keiner.recaudos]
+    }
+    
+    note right of DataAccess
+        **Patrones:**
+        - Repository (via DbContext)
+        - Entity Framework ORM
+    end note
+}
+
+cloud "API Externa F2X" as ExternalAPI {
+    [API Conteo y Recaudo]
+}
+
+' Relaciones Frontend
+Angular --> API : HTTP Requests\n(GET/POST)
+[RecaudosGridComponent] --> [RecaudoService] : Consume
+[ReporteMensualComponent] --> [RecaudoService] : Consume
+[RecaudoService] --> API : HTTP Client
+
+' Relaciones API a Services
+[RecaudosController] --> [RecaudoService] : Dependency\nInjection
+[RecaudosController] ..> Services : usa
+
+' Relaciones Services
+[RecaudoService] --> [ExternalApiService] : Consume
+[RecaudoService] --> [ApplicationDbContext] : Acceso a BD
+[ExternalApiService] --> ExternalAPI : HTTP Client\nBearer Token
+
+' Relaciones Data Access
+[ApplicationDbContext] --> [Recaudo Model] : Entity
+[ApplicationDbContext] --> DB : Entity Framework
+[reto_keiner.recaudos] ..> [Recaudo Model] : mapea
+
+' Leyenda
+legend right
+    **Tecnologías:**
+    * Frontend: Angular 20.3, TypeScript
+    * Backend: .NET 9.0, ASP.NET Core
+    * ORM: Entity Framework Core 9.0
+    * Base de Datos: SQL Server
+    
+    **Flujo de Datos:**
+    1. Usuario interactúa con Angular
+    2. Angular llama a la API REST
+    3. Controller delega a Services
+    4. Services acceden a BD o API externa
+    5. Datos retornan al usuario
+end legend
+
+@enduml

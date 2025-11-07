@@ -1,0 +1,505 @@
+﻿openapi: 3.1.0
+info:
+  title: API Recaudos Vehiculares - Reto F2X
+  description: |
+    Sistema de consulta y análisis de recaudos vehiculares con arquitectura de 3 capas.
+    
+    **Características principales:**
+    - Importación automática desde API externa
+    - Paginación eficiente
+    - Reportes mensuales agrupados por estación y fecha
+    - Filtros por estación, fecha y rango
+    
+    **Arquitectura:**
+    - Capa de Presentación (Controllers)
+    - Capa de Lógica de Negocio (Services)
+    - Capa de Acceso a Datos (Entity Framework Core)
+  version: 1.0.0
+  contact:
+    name: Keiner Arenas
+    email: keiner.arenas@f2x.com.co
+
+servers:
+  - url: http://localhost:5187/api
+    description: Servidor de desarrollo local
+
+tags:
+  - name: Recaudos
+    description: Operaciones CRUD sobre recaudos vehiculares
+  - name: Reportes
+    description: Reportes mensuales y agrupaciones
+  - name: Importación
+    description: Importación de datos desde API externa
+
+paths:
+  /Recaudos:
+    get:
+      tags:
+        - Recaudos
+      summary: Obtener recaudos con paginación
+      description: Retorna una lista paginada de recaudos ordenados por fecha descendente
+      parameters:
+        - name: pagina
+          in: query
+          description: Número de página (default 1)
+          required: false
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: registrosPorPagina
+          in: query
+          description: Cantidad de registros por página (default 50)
+          required: false
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 500
+      responses:
+        '200':
+          description: Lista de recaudos obtenida exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pagina:
+                    type: integer
+                    example: 1
+                  registrosPorPagina:
+                    type: integer
+                    example: 50
+                  totalRegistros:
+                    type: integer
+                    example: 23050
+                  totalPaginas:
+                    type: integer
+                    example: 461
+                  datos:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Recaudo'
+        '500':
+          description: Error interno del servidor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /Recaudos/estacion/{estacion}:
+    get:
+      tags:
+        - Recaudos
+      summary: Filtrar recaudos por estación
+      description: Obtiene recaudos de una estación específica con paginación
+      parameters:
+        - name: estacion
+          in: path
+          description: Nombre de la estación
+          required: true
+          schema:
+            type: string
+            example: Honda
+        - name: pagina
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: registrosPorPagina
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Recaudos filtrados por estación
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  estacion:
+                    type: string
+                  pagina:
+                    type: integer
+                  registrosPorPagina:
+                    type: integer
+                  totalRegistros:
+                    type: integer
+                  totalPaginas:
+                    type: integer
+                  datos:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Recaudo'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /Recaudos/fecha/{fecha}:
+    get:
+      tags:
+        - Recaudos
+      summary: Filtrar recaudos por fecha
+      description: Obtiene todos los recaudos de una fecha específica
+      parameters:
+        - name: fecha
+          in: path
+          description: Fecha en formato YYYY-MM-DD
+          required: true
+          schema:
+            type: string
+            format: date
+            example: "2024-06-15"
+      responses:
+        '200':
+          description: Recaudos de la fecha especificada
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Recaudo'
+        '400':
+          description: Formato de fecha inválido
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mensaje:
+                    type: string
+                    example: "Formato de fecha inválido. Use YYYY-MM-DD"
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /Recaudos/rango:
+    get:
+      tags:
+        - Recaudos
+      summary: Filtrar recaudos por rango de fechas
+      description: Obtiene recaudos entre dos fechas con paginación
+      parameters:
+        - name: fechaInicio
+          in: query
+          description: Fecha inicial
+          required: true
+          schema:
+            type: string
+            format: date
+            example: "2024-06-01"
+        - name: fechaFin
+          in: query
+          description: Fecha final
+          required: true
+          schema:
+            type: string
+            format: date
+            example: "2024-06-30"
+        - name: pagina
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: registrosPorPagina
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Recaudos en el rango especificado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  fechaInicio:
+                    type: string
+                    format: date
+                  fechaFin:
+                    type: string
+                    format: date
+                  pagina:
+                    type: integer
+                  registrosPorPagina:
+                    type: integer
+                  totalRegistros:
+                    type: integer
+                  totalPaginas:
+                    type: integer
+                  datos:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Recaudo'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /Recaudos/reporte-mensual:
+    get:
+      tags:
+        - Reportes
+      summary: Generar reporte mensual agrupado
+      description: |
+        Genera un reporte mensual con datos agrupados por estación y fecha.
+        
+        **IMPORTANTE:** La lógica de agrupación se ejecuta del lado del servidor (SQL Server)
+        utilizando GROUP BY, SUM() y COUNT(). No se procesa en el cliente.
+      parameters:
+        - name: año
+          in: query
+          description: Año del reporte
+          required: true
+          schema:
+            type: integer
+            example: 2024
+        - name: mes
+          in: query
+          description: Mes del reporte (1-12)
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+            example: 6
+      responses:
+        '200':
+          description: Reporte mensual generado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReporteMensual'
+        '400':
+          description: Parámetros inválidos
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mensaje:
+                    type: string
+                    example: "El mes debe estar entre 1 y 12"
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /Recaudos/reporte-estaciones:
+    get:
+      tags:
+        - Reportes
+      summary: Reporte agrupado solo por estación
+      description: Genera un reporte con totales y promedios por estación
+      parameters:
+        - name: año
+          in: query
+          required: true
+          schema:
+            type: integer
+            example: 2024
+        - name: mes
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+            example: 6
+      responses:
+        '200':
+          description: Reporte por estación generado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  periodo:
+                    type: string
+                    example: "2024-06"
+                  totalEstaciones:
+                    type: integer
+                    example: 3
+                  reporte:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        estacion:
+                          type: string
+                        totalVehiculos:
+                          type: integer
+                        totalRecaudado:
+                          type: number
+                          format: decimal
+                        promedioRecaudoDiario:
+                          type: number
+                          format: decimal
+        '400':
+          description: Parámetros inválidos
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /Recaudos/importar:
+    post:
+      tags:
+        - Importación
+      summary: Importar datos desde API externa
+      description: |
+        Importa recaudos desde la API externa desde el 31 de mayo de 2024 hasta hace 2 días.
+        
+        **Características:**
+        - Evita duplicados verificando fechas existentes
+        - Valida que las fechas tengan más de 2 días de anterioridad
+        - Autenticación automática con token Bearer
+      responses:
+        '200':
+          description: Importación completada exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mensaje:
+                    type: string
+                    example: "Importación completada exitosamente"
+                  registrosImportados:
+                    type: integer
+                    example: 1500
+                  fechaInicio:
+                    type: string
+                    example: "2024-05-31"
+                  fechaFin:
+                    type: string
+                    example: "2025-01-28"
+        '500':
+          description: Error durante la importación
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mensaje:
+                    type: string
+                  error:
+                    type: string
+
+  /Recaudos/importar/{fecha}:
+    post:
+      tags:
+        - Importación
+      summary: Importar datos de una fecha específica
+      description: Importa recaudos de una fecha en particular desde la API externa
+      parameters:
+        - name: fecha
+          in: path
+          description: Fecha en formato YYYY-MM-DD
+          required: true
+          schema:
+            type: string
+            format: date
+            example: "2024-06-15"
+      responses:
+        '200':
+          description: Importación de fecha completada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mensaje:
+                    type: string
+                    example: "Importación de fecha 2024-06-15 completada"
+                  registrosImportados:
+                    type: integer
+                    example: 350
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  schemas:
+    Recaudo:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        estacion:
+          type: string
+          example: "Honda"
+        sentido:
+          type: string
+          example: "HON-MAR"
+        hora:
+          type: string
+          format: date-time
+          example: "2024-06-15T14:30:00"
+        categoria:
+          type: string
+          example: "II"
+        valorTabulado:
+          type: number
+          format: decimal
+          example: 14300.00
+        fechaRegistro:
+          type: string
+          format: date-time
+          example: "2025-01-30T10:00:00"
+
+    ReporteMensual:
+      type: object
+      properties:
+        periodo:
+          type: string
+          example: "2024-06"
+        totalEstaciones:
+          type: integer
+          example: 3
+        totalDias:
+          type: integer
+          example: 30
+        totalVehiculos:
+          type: integer
+          example: 23050
+        totalRecaudado:
+          type: number
+          format: decimal
+          example: 1500000000.00
+        detalle:
+          type: array
+          items:
+            type: object
+            properties:
+              estacion:
+                type: string
+              fecha:
+                type: string
+                format: date
+              totalVehiculos:
+                type: integer
+              totalRecaudado:
+                type: number
+              categorias:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    categoria:
+                      type: string
+                    cantidad:
+                      type: integer
+                    total:
+                      type: number
+
+    Error:
+      type: object
+      properties:
+        mensaje:
+          type: string
+        error:
+          type: string
+
+  responses:
+    InternalError:
+      description: Error interno del servidor
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
