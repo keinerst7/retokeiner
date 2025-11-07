@@ -283,7 +283,3 @@ Error: CORS policy blocked
 **Keiner Arenas**
 
 Para el reto de F2X
-
-## 📄 Licencia
-
-Este proyecto fue desarrollado como parte de un reto técnico y es de uso educativo.
